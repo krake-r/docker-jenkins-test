@@ -1,2 +1,2 @@
-# docker-jenkins-test
-Testing integration of Jenkins on k8s with simple app deployment including a code scan with SonarQube and a container scan by Trivy.
+# Building a Docker Container and doing scans and stuff
+Taken from https://tutorials.releaseworksacademy.com/learn/building-your-first-docker-image-with-jenkins-2-guide-for-developers
