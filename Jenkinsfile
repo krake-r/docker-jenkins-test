@@ -1,42 +1,67 @@
-node {
-    def app
-
-    stage('Clone repository') {
-        /* Let's make sure we have the repository cloned to our workspace */
-
-        checkout scm
-    }
-
-    stage('Build with Kaniko') {
-      steps {
-        container(name: 'kaniko', shell: '/busybox/sh') {
-          sh '''#!/busybox/sh
-            echo "FROM jenkins/inbound-agent:latest" > Dockerfile
-            /kaniko/executor --context `pwd` --destination <docker-username>/hello-kaniko:latest (2)
-          '''
+pipeline {
+    agent {
+        kubernetes {
+            label 'img'
+            yaml """
+kind: Pod
+metadata:
+  name: img
+  annotations:
+    container.apparmor.security.beta.kubernetes.io/img: unconfined  
+spec:
+  containers:
+  - name: golang
+    image: golang:1.11
+    command:
+    - cat
+    tty: true
+  - name: img
+    workingDir: /home/jenkins
+    image: caladreas/img:0.5.1
+    imagePullPolicy: Always
+    securityContext:
+        rawProc: true
+        privileged: true
+    command:
+    - cat
+    tty: true
+    volumeMounts:
+      - name: jenkins-docker-cfg
+        mountPath: /root
+  volumes:
+  - name: temp
+    emptyDir: {}
+  - name: jenkins-docker-cfg
+    projected:
+      sources:
+      - secret:
+          name: regcred
+          items:
+            - key: .dockerconfigjson
+              path: .docker/config.json
+"""
         }
-      }
     }
-
-
-
-    stage('Test image') {
-        /* Ideally, we would run a test framework against our image.
-         * For this example, we're using a Volkswagen-type approach ;-) */
-
-        app.inside {
-            sh 'echo "Tests passed"'
+    stages {
+        stage('Checkout') {
+            steps {
+                git 'https://github.com/joostvdg/cat.git'
+            }
         }
-    }
-
-    stage('Push image') {
-        /* Finally, we'll push the image with two tags:
-         * First, the incremental build number from Jenkins
-         * Second, the 'latest' tag.
-         * Pushing multiple tags is cheap, as all the layers are reused. */
-        docker.withRegistry('https://registry.hub.docker.com', 'docker-hub-credentials') {
-            app.push("${env.BUILD_NUMBER}")
-            app.push("latest")
+        stage('Build') {
+            steps {
+                container('golang') {
+                    sh './build-go-bin.sh'
+                }
+            }
+        }
+        stage('Make Image') {
+            steps {
+                container('img') {
+                    sh 'mkdir cache'
+                    sh 'img build -s ./cache -f Dockerfile.run -t caladreas/cat .'
+                }
+            }
         }
     }
 }
