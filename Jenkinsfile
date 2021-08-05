@@ -45,18 +45,12 @@ spec:
   }
   stages {
 
-    stage('Clone repository') {
-      steps { 
-      /* Let's make sure we have the repository cloned to our workspace */
-
-        checkout scm
-      }
-    }
     stage('Build with Kaniko') {
       environment {
         PATH = "/busybox:/kaniko:$PATH"
       }
       steps {
+        checkout scm
         container(name: 'kaniko', shell: '/busybox/sh') {
             sh '''#!/busybox/sh
             /kaniko/executor -f `pwd`/Dockerfile -c `pwd` --insecure --skip-tls-verify --cache=true --destination=mydockerregistry:5000/myorg/myimage
