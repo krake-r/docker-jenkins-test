@@ -1,36 +1,37 @@
+/**
+ * This pipeline will build and deploy a Docker image with Kaniko
+ * https://github.com/GoogleContainerTools/kaniko
+ * without needing a Docker host
+ *
+ * You need to create a jenkins-docker-cfg secret with your docker config
+ * as described in
+ * https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/#create-a-secret-in-the-cluster-that-holds-your-authorization-token
+ *
+ * ie.
+ * kubectl create secret docker-registry regcred --docker-server=https://index.docker.io/v1/ --docker-username=csanchez --docker-password=mypassword --docker-email=john@doe.com
+ */
+
 pipeline {
-    agent {
-        kubernetes {
-            label 'img'
-            yaml """
+  agent {
+    kubernetes {
+      //cloud 'kubernetes'
+      label 'kaniko'
+      yaml """
 kind: Pod
 metadata:
-  name: img
-  annotations:
-    container.apparmor.security.beta.kubernetes.io/img: unconfined  
+  name: kaniko
 spec:
   containers:
-  - name: golang
-    image: golang:1.11
-    command:
-    - cat
-    tty: true
-  - name: img
-    workingDir: /home/jenkins
-    image: caladreas/img:0.5.1
+  - name: kaniko
+    image: gcr.io/kaniko-project/executor:debug-539ddefcae3fd6b411a95982a830d987f4214251
     imagePullPolicy: Always
-    securityContext:
-        rawProc: true
-        privileged: true
     command:
-    - cat
+    - /busybox/cat
     tty: true
     volumeMounts:
       - name: jenkins-docker-cfg
         mountPath: /root
   volumes:
-  - name: temp
-    emptyDir: {}
   - name: jenkins-docker-cfg
     projected:
       sources:
@@ -40,28 +41,21 @@ spec:
             - key: .dockerconfigjson
               path: .docker/config.json
 """
-        }
     }
-    stages {
-        stage('Checkout') {
-            steps {
-                git 'https://github.com/joostvdg/cat.git'
-            }
+  }
+  stages {
+    stage('Build with Kaniko') {
+      environment {
+        PATH = "/busybox:/kaniko:$PATH"
+      }
+      steps {
+        git 'https://github.com/jenkinsci/docker-jnlp-slave.git'
+        container(name: 'kaniko', shell: '/busybox/sh') {
+            sh '''#!/busybox/sh
+            /kaniko/executor -f `pwd`/Dockerfile -c `pwd` --insecure --skip-tls-verify --cache=true --destination=mydockerregistry:5000/myorg/myimage
+            '''
         }
-        stage('Build') {
-            steps {
-                container('golang') {
-                    sh './build-go-bin.sh'
-                }
-            }
-        }
-        stage('Make Image') {
-            steps {
-                container('img') {
-                    sh 'mkdir cache'
-                    sh 'img build -s ./cache -f Dockerfile.run -t caladreas/cat .'
-                }
-            }
-        }
+      }
     }
+  }
 }
